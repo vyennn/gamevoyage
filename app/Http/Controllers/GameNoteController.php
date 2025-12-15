@@ -7,39 +7,28 @@ use Illuminate\Http\Request;
 
 class GameNoteController extends Controller
 {
-    /**
-     * Create or update a note
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
             'game_id' => 'required|integer',
-            'note' => 'required|string|max:1000'
+            'note' => 'required|string'
         ]);
 
-        $note = auth()->user()->gameNotes()->updateOrCreate(
+        $note = auth()->user()->notes()->updateOrCreate(
             ['game_id' => $validated['game_id']],
             ['note' => $validated['note']]
         );
 
-        return response()->json([
-            'success' => true,
-            'note' => $note
-        ]);
+        return back();
     }
 
-    /**
-     * Delete a note
-     */
     public function destroy($gameId)
     {
         auth()->user()
-            ->gameNotes()
+            ->notes()
             ->where('game_id', $gameId)
             ->delete();
 
-        return response()->json([
-            'success' => true
-        ]);
+        return back();
     }
 }

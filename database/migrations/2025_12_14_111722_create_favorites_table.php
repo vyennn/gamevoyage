@@ -6,23 +6,22 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    public function up(): void
+    public function up()
     {
         Schema::create('favorites', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->integer('game_id'); // ID from API
+            $table->integer('game_id');
             $table->string('game_title');
             $table->string('game_thumbnail');
             $table->string('game_genre');
             $table->timestamps();
             
-            // Prevent duplicate favorites
             $table->unique(['user_id', 'game_id']);
         });
     }
 
-    public function down(): void
+    public function down()
     {
         Schema::dropIfExists('favorites');
     }

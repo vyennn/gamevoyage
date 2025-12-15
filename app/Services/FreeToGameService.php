@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class FreeToGameService
 {
@@ -14,15 +15,18 @@ class FreeToGameService
     {
         return Cache::remember('freetogame_all', 3600, function () {
             try {
-                $response = Http::timeout(10)->get('https://www.freetogame.com/api/games');
+                $response = Http::timeout(30)->get('https://www.freetogame.com/api/games');
                 
                 if ($response->successful()) {
-                    return $response->json();
+                    $games = $response->json();
+                    Log::info('FreeToGame API: Fetched ' . count($games) . ' games');
+                    return $games;
                 }
                 
+                Log::error('FreeToGame API failed: ' . $response->status());
                 return [];
             } catch (\Exception $e) {
-                \Log::error('FreeToGame API Error: ' . $e->getMessage());
+                Log::error('FreeToGame API Error: ' . $e->getMessage());
                 return [];
             }
         });
@@ -43,14 +47,14 @@ class FreeToGameService
                 
                 return null;
             } catch (\Exception $e) {
-                \Log::error("FreeToGame API Error for game {$id}: " . $e->getMessage());
+                Log::error("FreeToGame API Error for game {$id}: " . $e->getMessage());
                 return null;
             }
         });
     }
 
     /**
-     * Clear cache (useful for testing)
+     * Clear cache
      */
     public function clearCache()
     {

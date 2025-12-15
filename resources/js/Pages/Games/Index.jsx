@@ -2,8 +2,21 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Head, router } from '@inertiajs/react';
 import { Search, Gamepad2, Heart, BookOpen, Sparkles, X, Plus, Edit2, Trash2, User, LogOut, ChevronDown, Menu, Filter, Star, TrendingUp, Clock } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
+import AuthModal from '@/Components/AuthModal';
 
 export default function Index({ games, userFavorites, userNotes, auth }) {
+    // Add this check
+    if (!games || games.length === 0) {
+        return (
+            <div className="min-h-screen bg-black text-white flex items-center justify-center">
+                <div className="text-center">
+                    <Gamepad2 className="w-20 h-20 text-pink-500 mx-auto mb-4 animate-spin" />
+                    <p className="text-xl text-gray-400">Loading games...</p>
+                </div>
+            </div>
+        );
+    }
+    
     const [selectedGame, setSelectedGame] = useState(null);
     const [favorites, setFavorites] = useState(userFavorites || []);
     const [notes, setNotes] = useState(userNotes || {});
@@ -15,6 +28,8 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
     const containerRef = useRef(null);
+    const [showAuthModal, setShowAuthModal] = useState(false);
+    const [authMode, setAuthMode] = useState('login');
 
     const { scrollYProgress } = useScroll();
     const smoothProgress = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
@@ -30,6 +45,12 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
         return () => window.removeEventListener('mousemove', handleMouseMove);
     }, []);
 
+            // Add this new useEffect
+        useEffect(() => {
+            setFavorites(userFavorites || []);
+            setNotes(userNotes || {});
+        }, [userFavorites, userNotes]);
+
     const genres = ['all', ...new Set(games.map(g => g.genre))];
 
     const filteredGames = games.filter(game => {
@@ -43,84 +64,101 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
         ? games.filter(g => favorites.includes(g.id))
         : filteredGames;
 
-    const toggleFavorite = async (game) => {
-        if (!auth.user) {
-            router.visit('/login');
-            return;
-        }
-
-        const isFavorite = favorites.includes(game.id);
-
-        if (isFavorite) {
-            try {
-                await fetch(`/favorites/${game.id}`, {
-                    method: 'DELETE',
-                    headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content }
-                });
-                setFavorites(prev => prev.filter(id => id !== game.id));
-            } catch (error) {
-                console.error('Error removing favorite:', error);
+        const toggleFavorite = async (game) => {
+            console.log('Toggle favorite clicked', { game, authUser: auth.user });
+            
+            if (!auth.user) {
+                console.log('User not authenticated, showing login modal');
+                setAuthMode('login');
+                setShowAuthModal(true);
+                return;
             }
-        } else {
-            try {
-                await fetch('/favorites', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+        
+            const isFavorite = favorites.includes(game.id);
+            console.log('Is favorite?', isFavorite);
+        
+            if (isFavorite) {
+                try {
+                    console.log('Removing favorite:', game.id);
+                    const response = await fetch(`/favorites/${game.id}`, {
+                        method: 'DELETE',
+                        headers: { 
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content 
+                        }
+                    });
+                    console.log('Delete response:', response);
+                    
+                    if (response.ok) {
+                        setFavorites(prev => prev.filter(id => id !== game.id));
+                    }
+                } catch (error) {
+                    console.error('Error removing favorite:', error);
+                }
+            } else {
+                try {
+                    console.log('Adding favorite:', game);
+                    const response = await fetch('/favorites', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        },
+                        body: JSON.stringify({
+                            game_id: game.id,
+                            game_title: game.title,
+                            game_thumbnail: game.thumbnail,
+                            game_genre: game.genre
+                        })
+                    });
+                    console.log('Add response:', response);
+                    
+                    if (response.ok) {
+                        setFavorites(prev => [...prev, game.id]);
+                    }
+                } catch (error) {
+                    console.error('Error adding favorite:', error);
+                }
+            }
+        };
+
+        const saveNote = (gameId) => {
+            if (!auth.user) {
+                setAuthMode('login');
+                setShowAuthModal(true);
+                return;
+            }
+        
+            router.post('/notes', 
+                { game_id: gameId, note: noteText },
+                {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                        setNotes(prev => ({ ...prev, [gameId]: noteText }));
+                        setEditingNote(null);
+                        setNoteText('');
                     },
-                    body: JSON.stringify({
-                        game_id: game.id,
-                        game_title: game.title,
-                        game_thumbnail: game.thumbnail,
-                        game_genre: game.genre
-                    })
-                });
-                setFavorites(prev => [...prev, game.id]);
-            } catch (error) {
-                console.error('Error adding favorite:', error);
-            }
-        }
-    };
+                    onError: (errors) => {
+                        console.error('Error saving note:', errors);
+                    }
+                }
+            );
+        };
 
-    const saveNote = async (gameId) => {
-        if (!auth.user) {
-            router.visit('/login');
-            return;
-        }
-
-        try {
-            await fetch('/notes', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+        const deleteNote = (gameId) => {
+            router.delete(`/notes/${gameId}`, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setNotes(prev => {
+                        const updated = { ...prev };
+                        delete updated[gameId];
+                        return updated;
+                    });
                 },
-                body: JSON.stringify({ game_id: gameId, note: noteText })
+                onError: (errors) => {
+                    console.error('Error deleting note:', errors);
+                }
             });
-            setNotes(prev => ({ ...prev, [gameId]: noteText }));
-            setEditingNote(null);
-            setNoteText('');
-        } catch (error) {
-            console.error('Error saving note:', error);
-        }
-    };
-
-    const deleteNote = async (gameId) => {
-        try {
-            await fetch(`/notes/${gameId}`, {
-                method: 'DELETE',
-                headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content }
-            });
-            setNotes(prev => {
-                const updated = { ...prev };
-                delete updated[gameId];
-                return updated;
-            });
-        } catch (error) {
-            console.error('Error deleting note:', error);
-        }
-    };
+        };
 
     const startEditNote = (gameId) => {
         setEditingNote(gameId);
@@ -128,7 +166,13 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
     };
 
     const handleLogout = () => {
-        router.post('/logout');
+        router.post('/logout', {}, {
+            onSuccess: () => {
+                setFavorites([]);
+                setNotes({});
+                setShowFavorites(false);
+            }
+        });
     };
 
     const scrollToGames = () => {
@@ -191,8 +235,16 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                             </motion.div>
 
                             {/* Desktop Menu */}
-                            <nav className="hidden lg:flex items-center gap-8">
-                                <a href="#games-section" className="text-sm text-gray-400 hover:text-white transition-colors">Explore</a>
+                            <nav className="hidden lg:flex items-center gap-8 absolute left-1/2 transform -translate-x-1/2">
+                            <button
+                                    onClick={() => {
+                                        setShowFavorites(false);
+                                        document.getElementById('games-section').scrollIntoView({ behavior: 'smooth' });
+                                    }}
+                                    className="text-sm text-gray-400 hover:text-white transition-colors"
+                                >
+                                    Explore
+                                </button>
                                 <button
                                     onClick={() => setShowFavorites(!showFavorites)}
                                     className="text-sm text-gray-400 hover:text-white transition-colors flex items-center gap-2"
@@ -204,98 +256,124 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
 
                             {/* Auth Buttons */}
                             <div className="flex items-center gap-4">
-                                {auth.user ? (
-                                    <div className="relative">
-                                        <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            onClick={() => setShowUserMenu(!showUserMenu)}
-                                            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-full transition-all border border-white/10"
-                                        >
-                                            <User className="w-4 h-4" />
-                                            <span className="hidden md:inline text-sm">{auth.user.name}</span>
-                                        </motion.button>
+                            {auth?.user ? (
+    <div className="relative">
+        <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-full transition-all border border-white/10"
+        >
+            <User className="w-4 h-4" />
+            <span className="hidden md:inline text-sm">{auth.user.name}</span>
+        </motion.button>
 
-                                        <AnimatePresence>
-                                            {showUserMenu && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, y: -10 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                    exit={{ opacity: 0, y: -10 }}
-                                                    className="absolute right-0 mt-2 w-48 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
-                                                >
-                                                    <button
-                                                        onClick={handleLogout}
-                                                        className="w-full px-4 py-3 flex items-center gap-2 hover:bg-white/5 transition-all text-left text-sm"
-                                                    >
-                                                        <LogOut className="w-4 h-4" />
-                                                        Logout
-                                                    </button>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </div>
-                                ) : (
-                                    <div className="flex gap-2">
-                                        <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            onClick={() => router.visit('/login')}
-                                            className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 rounded-full transition-all border border-white/10"
-                                        >
-                                            Login
-                                        </motion.button>
-                                        <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.95 }}
-                                            onClick={() => router.visit('/register')}
-                                            className="px-4 py-2 text-sm bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 rounded-full transition-all"
-                                        >
-                                            Sign Up
-                                        </motion.button>
-                                    </div>
-                                )}
+        <AnimatePresence>
+            {showUserMenu && (
+                <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute right-0 mt-2 w-48 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl"
+                >
+                    <button
+                        onClick={handleLogout}
+                        className="w-full px-4 py-3 flex items-center gap-2 hover:bg-white/5 transition-all text-left text-sm"
+                    >
+                        <LogOut className="w-4 h-4" />
+                        Logout
+                    </button>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    </div>
+) : (
+    <div className="flex gap-2">
+        <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+                setAuthMode('login');
+                setShowAuthModal(true);
+            }}
+            className="px-4 py-2 text-sm bg-white/5 hover:bg-white/10 rounded-full transition-all border border-white/10"
+        >
+            Login
+        </motion.button>
+        <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+                setAuthMode('register');
+                setShowAuthModal(true);
+            }}
+            className="px-4 py-2 text-sm bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 rounded-full transition-all"
+        >
+            Sign Up
+        </motion.button>
+    </div>
+)}
+                                 
                             </div>
                         </div>
                     </div>
                 </motion.header>
 
                 {/* Hero Section - Full Screen */}
-                <motion.section
-                    style={{ opacity: heroOpacity, scale: heroScale, y: heroY }}
-                    className="relative min-h-screen flex items-center justify-center px-4"
-                >
-                    <div className="text-center max-w-5xl">
-                        <motion.div
-                            initial={{ opacity: 0, y: 30 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2 }}
-                            className="inline-flex items-center gap-2 mb-8 px-4 py-2 bg-white/5 backdrop-blur-sm rounded-full border border-white/10"
-                        >
-                            <Sparkles className="w-5 h-5 text-pink-400" />
-                            <span className="text-pink-400 text-sm font-medium tracking-widest uppercase">
-                                Free Gaming Universe
-                            </span>
-                        </motion.div>
+<motion.section
+    className="relative min-h-screen flex items-center justify-center px-4 pt-20"
+>
+    <div className="text-center max-w-5xl">
+        <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false }}
+            transition={{ delay: 0.2 }}
+            className="inline-flex items-center gap-2 mb-4 px-4 py-2 bg-white/5 backdrop-blur-sm rounded-full border border-white/10"
+        >
+            <Sparkles className="w-5 h-5 text-pink-400" />
+            <span className="text-pink-400 text-sm font-medium tracking-widest uppercase">
+                Free Gaming Universe
+            </span>
+        </motion.div>
 
                         <motion.h1
-                            initial={{ opacity: 0, y: 30 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.3 }}
-                            className="text-6xl md:text-8xl lg:text-9xl font-bold mb-8 leading-none"
+                            className="text-6xl md:text-8xl lg:text-9xl font-bold mb-8 leading-none overflow-visible"
                         >
-                            <span className="block bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">
+                            <motion.span 
+                                initial={{ x: -500, opacity: 0 }}
+                                whileInView={{ x: 0, opacity: 1 }}
+                                viewport={{ once: false, amount: 0.5 }}
+                                transition={{ 
+                                    type: "spring",
+                                    damping: 20,
+                                    stiffness: 100
+                                }}
+                                className="block bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent"
+                            >
                                 Your Epic
-                            </span>
-                            <span className="block bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                            </motion.span>
+                            <motion.span 
+                                initial={{ x: 500, opacity: 0 }}
+                                whileInView={{ x: 0, opacity: 1 }}
+                                viewport={{ once: false, amount: 0.5 }}
+                                transition={{ 
+                                    type: "spring",
+                                    damping: 20,
+                                    stiffness: 100,
+                                    delay: 0.2
+                                }}
+                                className="block bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent"
+                            >
                                 Journey
-                            </span>
+                            </motion.span>
                         </motion.h1>
 
                         <motion.p
-                            initial={{ opacity: 0, y: 30 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.4 }}
+                            initial={{ opacity: 0 }}
+                            whileInView={{ opacity: 1 }}
+                            viewport={{ once: false, amount: 0.5 }}
+                            transition={{ duration: 1.2, delay: 0.4 }}
                             className="text-xl md:text-2xl lg:text-3xl text-gray-400 mb-12 font-light max-w-3xl mx-auto leading-relaxed"
                         >
                             Discover, curate, and chronicle your adventure through thousands of free-to-play games
@@ -310,7 +388,10 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                             <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
-                                onClick={scrollToGames}
+                                onClick={() => {
+                                    setShowFavorites(false);  // Add this line to turn off collection mode
+                                    scrollToGames();
+                                }}
                                 className="px-8 py-4 bg-gradient-to-r from-pink-500 to-purple-500 rounded-full font-medium text-lg hover:shadow-2xl hover:shadow-pink-500/50 transition-all"
                             >
                                 Start Exploring
@@ -330,44 +411,57 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                                 </motion.button>
                             )}
                         </motion.div>
-                    </div>
 
-                    {/* Scroll Indicator */}
-                    <motion.div
-                        animate={{ y: [0, 10, 0] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="absolute bottom-10 left-1/2 transform -translate-x-1/2 cursor-pointer"
-                        onClick={scrollToGames}
-                    >
-                        <ChevronDown className="w-8 h-8 text-gray-500" />
-                    </motion.div>
+                        {/* Scroll Indicator */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1, y: [0, 10, 0] }}
+                            transition={{ opacity: { delay: 0.8, duration: 0.5 }, y: { duration: 2, repeat: Infinity } }}
+                            className="mt-9 cursor-pointer"
+                            onClick={scrollToGames}
+                        >
+                            <ChevronDown className="w-8 h-8 text-gray-500 mx-auto" />
+                        </motion.div>
+                    </div>
+                            
                 </motion.section>
 
                 {/* Games Section */}
-                <section id="games-section" className="relative min-h-screen py-20 px-4">
-                    <div className="container mx-auto max-w-7xl">
+                <section id="games-section" key={showFavorites ? 'favorites' : 'all'} className="relative py-3 px-4">
+                    <div className="container mx-auto max-w-7xl w-full">
                         {/* Section Header */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 50 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true }}
-                            transition={{ duration: 0.6 }}
-                            className="text-center mb-16"
-                        >
-                            <h2 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-                                Explore Games
-                            </h2>
-                            <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-                                Dive into a curated collection of free-to-play experiences
-                            </p>
-                        </motion.div>
+<motion.div
+    initial={{ opacity: 0, scale: 0.5 }}
+    whileInView={{ opacity: 1, scale: 1 }}
+    viewport={{ once: false, amount: 0.5 }}
+    transition={{ 
+        type: "spring",
+        damping: 15,
+        stiffness: 150, 
+        duration: 0.6 
+    }}
+    className="text-center mb-8"
+>
+    <h2 className="text-5xl md:text-7xl font-bold mb-3 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+        Explore Games
+    </h2>
+    <motion.p
+        initial={{ opacity: 0 }}
+        whileInView={{ opacity: 1 }}
+        viewport={{ once: false, amount: 0.5 }}
+        transition={{ delay: 0.3, duration: 0.8 }}
+        className="text-xl text-gray-400 max-w-2xl mx-auto"
+    >
+        Dive into a curated collection of free-to-play experiences
+    </motion.p>
+</motion.div>
 
                         {/* Search & Filters */}
                         <motion.div
                             initial={{ opacity: 0, y: 30 }}
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
-                            className="mb-12 space-y-6"
+                            className="mb-0 space-y-6"
                         >
                             <div className="flex flex-col lg:flex-row gap-4">
                                 <div className="relative flex-1">
@@ -420,168 +514,170 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                         </motion.div>
 
                         {/* Games Grid */}
-                        <motion.div layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                            <AnimatePresence mode="popLayout">
-                                {displayGames.map((game, index) => (
-                                    <motion.div
-                                        key={game.id}
-                                        layout
-                                        initial={{ opacity: 0, scale: 0.9 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-                                        exit={{ opacity: 0, scale: 0.9 }}
-                                        transition={{ delay: index * 0.05 }}
-                                        whileHover={{ y: -10 }}
-                                        className="group relative bg-white/5 backdrop-blur-xl rounded-3xl overflow-hidden border border-white/10 hover:border-pink-500/50 transition-all duration-500 hover:shadow-2xl hover:shadow-pink-500/20"
-                                    >
-                                        {/* Game Image */}
-                                        <div className="relative h-56 overflow-hidden">
-                                            <motion.img
-                                                whileHover={{ scale: 1.1 }}
-                                                transition={{ duration: 0.6 }}
-                                                src={game.thumbnail}
-                                                alt={game.title}
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
-                                            
-                                            {/* Favorite Button */}
-                                            <motion.button
-                                                whileHover={{ scale: 1.1 }}
-                                                whileTap={{ scale: 0.9 }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    toggleFavorite(game);
-                                                }}
-                                                className="absolute top-4 right-4 p-3 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition-all border border-white/20"
-                                            >
-                                                <Heart className={`w-5 h-5 ${favorites.includes(game.id) ? 'fill-pink-500 text-pink-500' : 'text-white'}`} />
-                                            </motion.button>
+                        
+<div className="min-h-[600px]">
+    <motion.div layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <AnimatePresence mode="popLayout">
+            {displayGames.map((game, index) => (
+                <motion.div
+                    key={game.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ delay: index * 0.05 }}
+                    whileHover={{ y: -10 }}
+                    className="group relative bg-white/5 backdrop-blur-xl rounded-3xl overflow-hidden border border-white/10 hover:border-pink-500/50 transition-all duration-500 hover:shadow-2xl hover:shadow-pink-500/20"
+                >
+                    {/* Game Image */}
+                    <div className="relative h-56 overflow-hidden">
+                        <motion.img
+                            whileHover={{ scale: 1.1 }}
+                            transition={{ duration: 0.6 }}
+                            src={game.thumbnail}
+                            alt={game.title}
+                            className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
+                        
+                        {/* Favorite Button */}
+                        <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFavorite(game);
+                            }}
+                            className="absolute top-4 right-4 p-3 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition-all border border-white/20"
+                        >
+                            <Heart className={`w-5 h-5 ${favorites.includes(game.id) ? 'fill-pink-500 text-pink-500' : 'text-white'}`} />
+                        </motion.button>
 
-                                            {/* Genre Badge */}
-                                            <span className="absolute top-4 left-4 px-4 py-2 bg-purple-500/80 backdrop-blur-sm rounded-full text-xs font-bold uppercase tracking-wider">
-                                                {game.genre}
-                                            </span>
-                                        </div>
+                        {/* Genre Badge */}
+                        <span className="absolute top-4 left-4 px-4 py-2 bg-purple-500/80 backdrop-blur-sm rounded-full text-xs font-bold uppercase tracking-wider">
+                            {game.genre}
+                        </span>
+                    </div>
 
-                                        {/* Game Info */}
-                                        <div className="p-6 space-y-4">
-                                            <h3 className="text-2xl font-bold line-clamp-1 group-hover:text-pink-400 transition-colors">
-                                                {game.title}
-                                            </h3>
-                                            <p className="text-gray-400 text-sm line-clamp-2 leading-relaxed">
-                                                {game.short_description}
-                                            </p>
+                    {/* Game Info */}
+                    <div className="p-6 space-y-4">
+                        <h3 className="text-2xl font-bold line-clamp-1 group-hover:text-pink-400 transition-colors">
+                            {game.title}
+                        </h3>
+                        <p className="text-gray-400 text-sm line-clamp-2 leading-relaxed">
+                            {game.short_description}
+                        </p>
 
-                                            <div className="flex items-center justify-between text-xs text-gray-500">
-                                                <span className="flex items-center gap-2">
-                                                    <Gamepad2 className="w-4 h-4" />
-                                                    {game.platform}
-                                                </span>
-                                                <span className="line-clamp-1">{game.publisher}</span>
-                                            </div>
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                            <span className="flex items-center gap-2">
+                                <Gamepad2 className="w-4 h-4" />
+                                {game.platform}
+                            </span>
+                            <span className="line-clamp-1">{game.publisher}</span>
+                        </div>
 
-                                            {/* Notes Section */}
-                                            {favorites.includes(game.id) && auth.user && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, height: 0 }}
-                                                    animate={{ opacity: 1, height: 'auto' }}
-                                                    className="pt-4 border-t border-white/10"
-                                                >
-                                                    {editingNote === game.id ? (
-                                                        <div className="space-y-3">
-                                                            <textarea
-                                                                value={noteText}
-                                                                onChange={(e) => setNoteText(e.target.value)}
-                                                                placeholder="Add your personal note..."
-                                                                className="w-full p-4 bg-white/5 border border-white/20 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
-                                                                rows="3"
-                                                                autoFocus
-                                                            />
-                                                            <div className="flex gap-2">
-                                                                <motion.button
-                                                                    whileHover={{ scale: 1.02 }}
-                                                                    whileTap={{ scale: 0.98 }}
-                                                                    onClick={() => saveNote(game.id)}
-                                                                    className="flex-1 px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-500 rounded-lg text-sm font-medium"
-                                                                >
-                                                                    Save
-                                                                </motion.button>
-                                                                <motion.button
-                                                                    whileHover={{ scale: 1.02 }}
-                                                                    whileTap={{ scale: 0.98 }}
-                                                                    onClick={() => setEditingNote(null)}
-                                                                    className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm"
-                                                                >
-                                                                    Cancel
-                                                                </motion.button>
-                                                            </div>
-                                                        </div>
-                                                    ) : notes[game.id] ? (
-                                                        <div className="bg-white/5 rounded-xl p-4 space-y-2">
-                                                            <div className="flex items-start justify-between">
-                                                                <BookOpen className="w-5 h-5 text-pink-400" />
-                                                                <div className="flex gap-2">
-                                                                    <motion.button
-                                                                        whileHover={{ scale: 1.1 }}
-                                                                        whileTap={{ scale: 0.9 }}
-                                                                        onClick={() => startEditNote(game.id)}
-                                                                        className="text-gray-400 hover:text-pink-400 transition-colors"
-                                                                    >
-                                                                        <Edit2 className="w-4 h-4" />
-                                                                    </motion.button>
-                                                                    <motion.button
-                                                                        whileHover={{ scale: 1.1 }}
-                                                                        whileTap={{ scale: 0.9 }}
-                                                                        onClick={() => deleteNote(game.id)}
-                                                                        className="text-gray-400 hover:text-red-400 transition-colors"
-                                                                    >
-                                                                        <Trash2 className="w-4 h-4" />
-                                                                    </motion.button>
-                                                                </div>
-                                                            </div>
-                                                            <p className="text-sm text-gray-300 leading-relaxed">{notes[game.id]}</p>
-                                                        </div>
-                                                    ) : (
-                                                        <motion.button
-                                                            whileHover={{ scale: 1.02 }}
-                                                            whileTap={{ scale: 0.98 }}
-                                                            onClick={() => startEditNote(game.id)}
-                                                            className="w-full px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2"
-                                                        >
-                                                            <Plus className="w-4 h-4" />
-                                                            Add Personal Note
-                                                        </motion.button>
-                                                    )}
-                                                </motion.div>
-                                            )}
-
-                                            {/* Explore Button */}
+                        {/* Notes Section */}
+                        {favorites.includes(game.id) && auth.user && (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                className="pt-4 border-t border-white/10"
+                            >
+                                {editingNote === game.id ? (
+                                    <div className="space-y-3">
+                                        <textarea
+                                            value={noteText}
+                                            onChange={(e) => setNoteText(e.target.value)}
+                                            placeholder="Add your personal note..."
+                                            className="w-full p-4 bg-white/5 border border-white/20 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500 resize-none"
+                                            rows="3"
+                                            autoFocus
+                                        />
+                                        <div className="flex gap-2">
                                             <motion.button
                                                 whileHover={{ scale: 1.02 }}
                                                 whileTap={{ scale: 0.98 }}
-                                                onClick={() => setSelectedGame(game)}
-                                                className="w-full mt-4 px-6 py-4 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 rounded-xl font-medium transition-all shadow-lg shadow-pink-500/30"
+                                                onClick={() => saveNote(game.id)}
+                                                className="flex-1 px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-500 rounded-lg text-sm font-medium"
                                             >
-                                                Explore Details
+                                                Save
+                                            </motion.button>
+                                            <motion.button
+                                                whileHover={{ scale: 1.02 }}
+                                                whileTap={{ scale: 0.98 }}
+                                                onClick={() => setEditingNote(null)}
+                                                className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm"
+                                            >
+                                                Cancel
                                             </motion.button>
                                         </div>
-                                    </motion.div>
-                                ))}
-                            </AnimatePresence>
-                        </motion.div>
-
-                        {/* Empty State */}
-                        {displayGames.length === 0 && (
-                            <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="text-center py-20"
-                            >
-                                <Gamepad2 className="w-20 h-20 text-gray-700 mx-auto mb-6" />
-                                <p className="text-2xl text-gray-400">No games found</p>
-                                <p className="text-gray-500 mt-2">Try adjusting your filters or search terms</p>
+                                    </div>
+                                ) : notes[game.id] ? (
+                                    <div className="bg-white/5 rounded-xl p-4 space-y-2">
+                                        <div className="flex items-start justify-between">
+                                            <BookOpen className="w-5 h-5 text-pink-400" />
+                                            <div className="flex gap-2">
+                                                <motion.button
+                                                    whileHover={{ scale: 1.1 }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => startEditNote(game.id)}
+                                                    className="text-gray-400 hover:text-pink-400 transition-colors"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </motion.button>
+                                                <motion.button
+                                                    whileHover={{ scale: 1.1 }}
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => deleteNote(game.id)}
+                                                    className="text-gray-400 hover:text-red-400 transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </motion.button>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-gray-300 leading-relaxed">{notes[game.id]}</p>
+                                    </div>
+                                ) : (
+                                    <motion.button
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={() => startEditNote(game.id)}
+                                        className="w-full px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        Add Personal Note
+                                    </motion.button>
+                                )}
                             </motion.div>
                         )}
+
+                        {/* Explore Button */}
+                        <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => setSelectedGame(game)}
+                            className="w-full mt-4 px-6 py-4 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 rounded-xl font-medium transition-all shadow-lg shadow-pink-500/30"
+                        >
+                            Explore Details
+                        </motion.button>
+                    </div>
+                </motion.div>
+            ))}
+        </AnimatePresence>
+    </motion.div>
+</div>
+{/* Empty State */}
+{displayGames.length === 0 && (
+    <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="text-center -mt-30 pb-64 flex flex-col items-center justify-center"
+    >
+        <Gamepad2 className="w-20 h-20 text-gray-700 mx-auto mb-6" />
+        <p className="text-2xl text-gray-400">No games found</p>
+        <p className="text-gray-500 mt-2">Try adjusting your filters or search terms</p>
+    </motion.div>
+)}
                     </div>
                 </section>
 
@@ -711,12 +807,13 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                 </AnimatePresence>
 
                 {/* Footer */}
-                <footer className="relative py-12 border-t border-white/5">
-                    <div className="container mx-auto px-4 text-center">
+                <footer className="relative py-12 border-t border-white/5 w-full">
+    <div className="container mx-auto px-4 lg:px-8 max-w-7xl w-full">
                         <motion.div
                             initial={{ opacity: 0 }}
                             whileInView={{ opacity: 1 }}
                             viewport={{ once: true }}
+                            className="text-center"
                         >
                             <div className="flex items-center justify-center gap-3 mb-4">
                                 <Gamepad2 className="w-6 h-6 text-pink-500" />
@@ -733,21 +830,27 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                         </motion.div>
                     </div>
                 </footer>
+                {/* Auth Modal */}
+                <AuthModal 
+                    show={showAuthModal} 
+                    onClose={() => setShowAuthModal(false)}
+                    initialMode={authMode}
+                />
             </div>
 
             <style>{`
-                .scrollbar-hide::-webkit-scrollbar {
-                    display: none;
-                }
-                .scrollbar-hide {
-                    -ms-overflow-style: none;
-                    scrollbar-width: none;
-                }
-                @keyframes pulse {
-                    0%, 100% { opacity: 0.1; }
-                    50% { opacity: 0.2; }
-                }
-            `}</style>
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+    }
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 0.1; }
+        50% { opacity: 0.2; }
+    }
+`}</style>
         </>
     );
 }

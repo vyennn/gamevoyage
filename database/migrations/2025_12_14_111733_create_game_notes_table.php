@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    public function up(): void
+    public function up()
     {
         Schema::create('game_notes', function (Blueprint $table) {
             $table->id();
@@ -15,12 +15,11 @@ return new class extends Migration
             $table->text('note');
             $table->timestamps();
             
-            // One note per game per user
             $table->unique(['user_id', 'game_id']);
         });
     }
 
-    public function down(): void
+    public function down()
     {
         Schema::dropIfExists('game_notes');
     }

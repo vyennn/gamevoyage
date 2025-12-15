@@ -29,15 +29,15 @@ class GameController extends Controller
                 ->toArray();
                 
             $userNotes = auth()->user()
-                ->gameNotes()
+                ->notes()  // Fixed!
                 ->pluck('note', 'game_id')
                 ->toArray();
         }
 
-        return Inertia::render('Games/Index', [
+        return Inertia::render('Games/Index', [  // Fixed!
             'games' => $games,
             'userFavorites' => $userFavorites,
-            'userNotes' => $userNotes,
+            'userNotes' => $userNotes,  // Fixed!
             'auth' => [
                 'user' => auth()->user()
             ]

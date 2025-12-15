@@ -55,7 +55,7 @@ class User extends Authenticatable
         return $this->hasMany(Favorite::class);
     }
 
-    public function gameNotes()
+    public function Notes()
     {
         return $this->hasMany(GameNote::class);
     }
