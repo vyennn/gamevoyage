@@ -73,12 +73,23 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
         document.getElementById('games-section').scrollIntoView({ behavior: 'smooth' });
     };
     useEffect(() => {
-        const handleMouseMove = (e) => {
+    let rafId;
+    
+    const handleMouseMove = (e) => {
+        if (rafId) return;
+        
+        rafId = requestAnimationFrame(() => {
             setMousePosition({ x: e.clientX, y: e.clientY });
-        };
-        window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, []);
+            rafId = null;
+        });
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        if (rafId) cancelAnimationFrame(rafId);
+    };
+}, []);
 
     useEffect(() => {
         setFavorites(userFavorites || []);
