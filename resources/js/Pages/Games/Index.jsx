@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback} from 'react';
 import { Head, router } from '@inertiajs/react';
 import { Search, Gamepad2, Heart, BookOpen, Sparkles, X, Plus, Edit2, Trash2, User, LogOut, ChevronDown, Menu, Filter, Star, TrendingUp, Clock } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useTransform, useSpring } from 'framer-motion';
 import AuthModal from '@/Components/AuthModal';
+import GameVoyageIntro from '@/Components/GameVoyageIntro';
 import '@google/model-viewer';
 
 export default function Index({ games, userFavorites, userNotes, auth }) {
@@ -17,6 +18,11 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
             </div>
         );
     }
+    const [showLaptopIntro, setShowLaptopIntro] = useState(true);
+    const [introComplete, setIntroComplete] = useState(false);
+    const handleIntroComplete = useCallback(() => {
+        setIntroComplete(true);
+    }, []);
     
     const [selectedGame, setSelectedGame] = useState(null);
     const [favorites, setFavorites] = useState(userFavorites || []);
@@ -183,7 +189,49 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
     return (
         <>
             <Head title="GameVoyage" />
+           {showLaptop && (
+    <div
+        className="fixed inset-0 z-[200] bg-white flex items-center justify-center overflow-hidden"
+        style={{
+            animation: 'laptopFadeOut 1s ease-in-out 3s forwards',
+        }}
+    >
+        <style>{`
+            @keyframes laptopZoom {
+                0% { transform: scale(1); opacity: 1; }
+                100% { transform: scale(3); opacity: 0; }
+            }
+            @keyframes laptopFadeOut {
+                0% { opacity: 1; }
+                100% { opacity: 0; pointer-events: none; }
+            }
+        `}</style>
 
+        <div style={{ animation: 'laptopZoom 1s ease-in-out 3s forwards' }}>
+            <model-viewer
+                src="/Model/laptop.glb"
+                alt="Laptop Intro"
+                auto-rotate
+                camera-controls={false}
+                interaction-prompt="none"
+                style={{ width: '600px', height: '400px' }}
+            />
+        </div>
+    </div>
+)}
+
+{!showLaptop && !introComplete && (
+    <GameVoyageIntro onComplete={() => setIntroComplete(true)} />
+)}
+
+
+             {/* Your existing dashboard - wrapped in fade-in animation */}
+            {introComplete && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 1 }}
+                >
             <div className="min-h-screen bg-[#fffff] text-white overflow-x-hidden">
 
                 {/* Cursor Follower */}
@@ -471,7 +519,7 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                             opacity: { delay: 1.2, duration: 0.5 }, 
                             y: { duration: 2, repeat: Infinity, delay: 1.5 } 
                         }}
-                        className="absolute bottom-14 left-1/2 transform -translate-x-[10px] cursor-pointer" 
+                        className="absolute bottom-20 left-1/2 transform -translate-x-[10px] cursor-pointer" 
                         onClick={scrollToGames}
                     >
                         <ChevronDown className="w-8 h-8 text-gray-500" />
@@ -492,6 +540,7 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
     auto-rotate            // spins automatically
     disable-zoom           // disables zoom
     interaction-prompt="none" // removes click/tap hint
+    shadow-intensity="1"
     camera-controls={false}    // disables manual rotation
     style={{ width: '100%', height: '100%', '--poster-color': 'transparent' }}
 />
@@ -506,6 +555,7 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
     auto-rotate
     disable-zoom
     interaction-prompt="none"
+    shadow-intensity="1"    
     camera-controls={false}
     style={{ width: '100%', height: '100%', '--poster-color': 'transparent' }}
 />
@@ -926,6 +976,8 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
                     initialMode={authMode}
                 />
             </div>
+            </motion.div>
+            )}
 
             <style>{`
     .scrollbar-hide::-webkit-scrollbar {
