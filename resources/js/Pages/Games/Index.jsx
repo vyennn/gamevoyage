@@ -39,12 +39,23 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
     const heroY = useTransform(smoothProgress, [0, 0.3], [0, -100]);
 
     useEffect(() => {
-        const handleMouseMove = (e) => {
+    let rafId;
+    
+    const handleMouseMove = (e) => {
+        if (rafId) return;
+        
+        rafId = requestAnimationFrame(() => {
             setMousePosition({ x: e.clientX, y: e.clientY });
-        };
-        window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, []);
+            rafId = null;
+        });
+    };
+    
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        if (rafId) cancelAnimationFrame(rafId);
+    };
+}, []);
 
     // Add this new useEffect
     useEffect(() => {
@@ -187,18 +198,20 @@ export default function Index({ games, userFavorites, userNotes, auth }) {
             <div className="min-h-screen bg-[#fffff] text-white overflow-x-hidden">
 
                 {/* Cursor Follower */}
-                <motion.div
-                    className="fixed w-6 h-6 border-2 border-violet-500 rounded-full pointer-events-none z-50 mix-blend-difference hidden lg:block"
-                    animate={{
-                        x: mousePosition.x - 12,
-                        y: mousePosition.y - 12,
-                    }}
-                    transition={{ 
-                        type: "tween",
-                        duration: 0.1,
-                        ease: "linear"
-                    }}
-                />
+<motion.div
+    className="fixed w-6 h-6 border-2 border-violet-500 rounded-full pointer-events-none z-50 mix-blend-difference hidden lg:block"
+    style={{
+        x: mousePosition.x - 12,
+        y: mousePosition.y - 12,
+    }}
+    transition={{
+        type: "spring",
+        stiffness: 400,
+        damping: 28,
+        mass: 0.5,
+        restDelta: 0.001
+    }}
+/>
 
                 {/* Animated Background Gradient */}
                 <div className="fixed inset-0 overflow-hidden pointer-events-none">
