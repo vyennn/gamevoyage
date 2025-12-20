@@ -34,10 +34,10 @@ class GameController extends Controller
                 ->toArray();
         }
 
-        return Inertia::render('Games/Index', [  // Fixed!
+        return Inertia::render('Games/Index', [  
             'games' => $games,
             'userFavorites' => $userFavorites,
-            'userNotes' => $userNotes,  // Fixed!
+            'userNotes' => $userNotes,  
             'auth' => [
                 'user' => auth()->user()
             ]
