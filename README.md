@@ -1,4 +1,4 @@
-GameVoyage
+
 GameVoyage is a dynamic, interactive, single-page web application that tells a visual story about free-to-play games using data from the FreeToGame API. 
 
 Features
